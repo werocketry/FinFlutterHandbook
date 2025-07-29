@@ -149,3 +149,39 @@ if __name__ == '__main__':
             'P': 49633, # pressure, Pa = 7.1986 psi
             'T': 251.56 # temperature, K = -6.86 F
         }, verbose=True)
+
+
+def flutter_velocity_eliptical_fin(input_dict : dict):
+     # Inputs
+    G = input_dict['G'] # shear modulus, Pa
+    T2T = input_dict['T2T'] # tip to tip, True if tip to tip, False if not
+
+    c_r = input_dict['c_r'] # root chord, unit of length
+    b = input_dict['b'] # semi-span aka height, unit of length
+    m = input_dict['m'] # fin sweep length, unit of length
+    t = input_dict['t'] # thickness, unit of length
+    
+
+    P = input_dict['P'] # pressure, Pa
+    T = input_dict['T'] # temperature, K
+
+    # Constants
+    κ = 1.4 # adiabatic index aka ratio of specific heats for air, unitless
+
+    # Calculations
+    S = ((c_r/2) * np.pi) * b / 2 # planform (fin) area, unit of area (unit of length squared)
+    bc = (S/b * 2)- c_r #psuedo tip chord length
+    t_to_c_r = t / c_r # thickness ratio, unitless
+    λ = bc / c_r # taper ratio, unitless
+    AR = b**2 / S # aspect ratio, unitless
+    C_x = (2 * bc * m + bc ** 2 + m * c_r + c_r * bc + c_r ** 2)/(3 * (bc + c_r)) # location of the centroid of the fin in the axis along the fin's chord, unit of length
+    ε = C_x / c_r - 0.25 # distance of the centroid behind the quarter chord, unitless
+
+    denom_const = 24 * ε / np.pi * (λ + 1)/2 * (AR ** 3 / (t_to_c_r ** 3 * (AR + 2))) # values of the denominator inside the radical that depend on fin geometry, unitless
+    fin_const = G / denom_const # values in the radical that depend on the fin (geometry and material), Pa
+
+    a = np.sqrt(κ * T * 8.3144598 / 0.0289644) # speed of sound, m/s
+
+    
+
+    return a * np.sqrt(fin_const / (P * κ)) # flutter velocity, m/s

@@ -4,8 +4,6 @@
     # https://www.apogeerockets.com/education/downloads/Newsletter411.pdf
 
 
-# TODO take speed of sound calc out of the function and make it a separate function?
-
 import numpy as np
 
 def flutter_velocity_trapezoidal_fin(input_dict : dict):
@@ -77,7 +75,7 @@ def flutter_velocity_trapezoidal_fin(input_dict : dict):
     if T2T:
         fin_const *= 2 # tip to tip, which would increase flutter velocity by a factor of √2
 
-    a = np.sqrt(κ * T * 8.3144598 / 0.0289644) # speed of sound, m/s
+    a = speed_of_sound(T, κ=κ) # speed of sound, m/s
 
     return a * np.sqrt(fin_const / (P * κ)) # flutter velocity, m/s
 
@@ -125,31 +123,53 @@ def flutter_velocity_polygon_fin(geometry : list, conditions : dict, verbose = F
     fin_area = 0
     fin_Cx = 0
 
+    for tri in tris:
+        pts = verts[tri]
+        # area via shoelace formula
+        area = 0.5 * abs(
+            pts[0,0]*(pts[1,1]-pts[2,1]) +
+            pts[1,0]*(pts[2,1]-pts[0,1]) +
+            pts[2,0]*(pts[0,1]-pts[1,1])
+        )
+        cx = np.mean(pts[:,0])  # centroid x of triangle
+        tri_areas.append(area)
+        tri_Cxs.append(cx)
 
+    fin_area = np.sum(tri_areas)
+    C_x = np.sum(np.array(tri_areas) * np.array(tri_Cxs)) / fin_area  # weighted centroid x
+    b = np.max(verts[:,1])  # semi-span
+    c_r = np.max(verts[:,0]) - np.min(verts[:,0])  # root chord
 
+    # --- Inputs ---
+    G = conditions['G']
+    T2T = conditions['T2T']
+    t = conditions['t']
+    P = conditions['P']
+    T = conditions['T']
 
-if __name__ == '__main__':
-    if 0: # example in POF 615
-        print(flutter_velocity_trapezoidal_fin({
-            'G': 4136854000, # shear modulus, Pa = 600000 psi
-            'T2T': False, # tip to tip, True if tip to tip, False if not
-            'c_r': 7.5, # root chord, in
-            'c_t': 2.5, # tip chord, in
-            'b': 3, # semi-span, in
-            'm': 4.285, # fin sweep length, in
-            't': 0.125, # thickness, in
-            'P': 49633, # pressure, Pa = 7.1986 psi
-            'T': 251.56 # temperature, K = -6.86 F
-        }) * 3.28084) # flutter velocity, ft/s
-    if 1:
-        flutter_velocity_polygon_fin([(0,0), (2,3), (4,5), (7,7), (1,0)], {
-            'G': 4136854000, # shear modulus, Pa = 600000 psi
-            'T2T': False, # tip to tip, True if tip to tip, False if not
-            't': 0.125, # thickness, in
-            'P': 49633, # pressure, Pa = 7.1986 psi
-            'T': 251.56 # temperature, K = -6.86 F
-        }, verbose=True)
+    # --- Aerodynamic terms ---
+    κ = 1.4
+    t_to_c_r = t / c_r
+    AR = b**2 / fin_area
+    λ = (fin_area/b) / c_r  # effective taper ratio
+    ε = C_x / c_r - 0.25
 
+    denom_const = 24 * ε / np.pi * (λ + 1)/2 * (AR**3 / (t_to_c_r**3 * (AR + 2)))
+    fin_const = G / denom_const
+
+    if T2T:
+        fin_const *= 2
+
+    a = speed_of_sound(T, κ=κ)
+    Vf = a * np.sqrt(fin_const / (P * κ))
+
+    if verbose:
+        print(f"Fin area: {fin_area:.3f}")
+        print(f"Aspect ratio (AR): {AR:.3f}")
+        print(f"Centroid offset (ε): {ε:.3f}")
+        print(f"Flutter velocity: {Vf:.2f} m/s")
+
+    return Vf
 
 def flutter_velocity_eliptical_fin(input_dict : dict):
      # Inputs
@@ -180,8 +200,64 @@ def flutter_velocity_eliptical_fin(input_dict : dict):
     denom_const = 24 * ε / np.pi * (λ + 1)/2 * (AR ** 3 / (t_to_c_r ** 3 * (AR + 2))) # values of the denominator inside the radical that depend on fin geometry, unitless
     fin_const = G / denom_const # values in the radical that depend on the fin (geometry and material), Pa
 
-    a = np.sqrt(κ * T * 8.3144598 / 0.0289644) # speed of sound, m/s
+    a = speed_of_sound(T, κ=κ) # speed of sound, m/s
 
     
 
     return a * np.sqrt(fin_const / (P * κ)) # flutter velocity, m/s
+
+import numpy as np
+
+def speed_of_sound(T: float, κ: float = 1.4, R: float = 8.3144598, M: float = 0.0289644) -> float:
+
+    return np.sqrt(κ * R * T / M)
+
+if __name__ == '__main__':
+    # Example 1: Trapezoidal fin (from POF 615)
+    trapezoid_result = flutter_velocity_trapezoidal_fin({
+        'G': 4136854000,  # shear modulus, Pa = 600000 psi
+        'T2T': False,     # no tip-to-tip
+        'c_r': 7.5,       # root chord, in
+        'c_t': 2.5,       # tip chord, in
+        'b': 3,           # semi-span, in
+        'm': 4.285,       # sweep length, in
+        't': 0.125,       # thickness, in
+        'P': 49633,       # pressure, Pa = 7.1986 psi
+        'T': 251.56       # temperature, K
+    }) * 3.28084  # convert to ft/s
+
+    # Example 2: Polygon fin
+    polygon_result = flutter_velocity_polygon_fin(
+        [(0, 0), (2, 3), (4, 5), (7, 7), (1, 0)], {
+            'G': 4136854000,
+            'T2T': False,
+            't': 0.125,
+            'P': 49633,
+            'T': 251.56
+        },
+        verbose=True
+    )
+
+    # Example 3: Elliptical fin
+    elliptical_result = flutter_velocity_eliptical_fin({
+        'G': 4136854000,
+        'T2T': False,
+        'c_r': 7.5,
+        'b': 3,
+        'm': 4.285,
+        't': 0.125,
+        'P': 49633,
+        'T': 251.56
+    })
+
+    # Print all results
+    print("\n--- Flutter Velocity Results ---")
+    print(f"Trapezoidal fin: {trapezoid_result:.2f} ft/s")
+    print(f"Polygon fin:     {polygon_result:.2f} m/s")
+    print(f"Elliptical fin:  {elliptical_result:.2f} m/s")
+
+        
+        
+
+
+
